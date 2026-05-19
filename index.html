@@ -244,7 +244,7 @@
       <div class="section-title-text"><span>💼</span> 今日工作内容</div>
       <button class="template-btn" onclick="openTemplateModal()">模板示例</button>
     </div>
-    <textarea id="input-work" placeholder="建议按照markdown格式输入内容" rows="6"></textarea>
+    <textarea id="input-work" placeholder="支持：大段文字直接粘贴；并列事项用分号；上下级用缩进或 1/a/i。&#10;&#10;层级示例：&#10;1. 需求验收&#10;   a. 海外三方支付提示 - 增加&#10;      i. 避免客诉时无证据&#10;   b. 中国安卓支付链路优化" rows="7"></textarea>
   </div>
 
   <div class="section">
@@ -326,6 +326,29 @@
   function isModuleLine(line) {
     const cleanLine = line.trim();
     return cleanLine.length <= 20 && /(业务|项目|模块)$/.test(cleanLine);
+  }
+
+  function hasListMarker(line) {
+    return getMarkerType(line) !== 'text';
+  }
+
+  function splitFreeformLine(line) {
+    const trimmed = line.trim();
+
+    if (!trimmed || hasListMarker(line) || isModuleLine(trimmed) || trimmed.length < 45) {
+      return [line];
+    }
+
+    return trimmed
+      .replace(/([。；;])\s*/g, '$1\n')
+      .replace(/，(?=(同时|另外|此外|后续|今天|明天|然后|并且|发现|输出|完成|跟进|沟通|同步|整理|Review|review))/g, '\n')
+      .split('\n')
+      .map(item => item.trim().replace(/[。；;]$/, ''))
+      .filter(Boolean);
+  }
+
+  function expandFreeformLines(lines) {
+    return lines.flatMap(splitFreeformLine);
   }
 
   function formatSectionTitle(name) {
@@ -616,7 +639,7 @@
   }
 
   function formatWork(work) {
-    const lines = splitLines(work);
+    const lines = expandFreeformLines(splitLines(work));
     if (!lines.length) return '';
 
     const sections = [];
@@ -701,7 +724,7 @@
   }
 
   function formatList(title, text) {
-    const lines = splitLines(text);
+    const lines = expandFreeformLines(splitLines(text));
     if (!lines.length) return '';
 
     const items = lines

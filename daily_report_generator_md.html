@@ -585,34 +585,61 @@
     return hasKeyword && hasMetric;
   }
 
+  function hasOutcome(text) {
+    return /(结论|明确|确认|完成|已完成|上线|已上线|输出|同步|提升|下降|改善|解决|已处理|确定)/.test(text);
+  }
+
+  function hasNextStep(text) {
+    return /(下一步|后续|明日|明天|计划|预计|待|继续|跟进|上线|观察|验证|负责人|时间点)/.test(text);
+  }
+
+  function addSuggestion(suggestions, text) {
+    if (!suggestions.includes(text)) suggestions.push(text);
+  }
+
   function buildSuggestions(work, plan, thoughts) {
     const content = `${work}\n${plan}\n${thoughts}`;
     const suggestions = [];
-    const hasThoughts = Boolean(thoughts.trim());
-    const hasRichWork = splitLines(work).length >= 4;
+    const workAndPlan = `${work}\n${plan}`;
 
     if (/(Paywall|paywall|支付率|调起支付|实际支付率)/.test(content) && !hasSpecificMetric(content, ['Paywall', 'paywall', '支付率', '调起支付', '实际支付率'])) {
-      suggestions.push('Paywall / 支付率相关内容可以补充具体数字，例如“近 6 个月下降 X 个百分点”或“影响到哪个入口 / SKU”。');
+      addSuggestion(suggestions, '【落地结论】Paywall / 支付率相关内容可以补充具体数字，例如“近 6 个月下降 X 个百分点”或“影响到哪个入口 / SKU”。');
     }
 
     if (/618|活动/.test(content) && !/(收入|新增|GMV|拉动|影响|预估|预计).*(\d|多少|X)/i.test(content)) {
-      suggestions.push('618 活动可以补充预期业务影响，例如预计拉动多少新增收入、影响哪些用户或上线后的观察指标。');
+      addSuggestion(suggestions, '【落地结论】活动相关内容可以补充预期业务影响，例如预计拉动多少新增收入、影响哪些用户或上线后的观察指标。');
     }
 
-    if (/(Coins|coins|补发|推送异常|未收到)/.test(content) && !/(用户|人数|量级|覆盖|影响).*(\d|多少|X)/i.test(content)) {
-      suggestions.push('Coins 补发或推送异常可以补充影响用户量级，例如影响多少用户、补发覆盖范围、是否还有遗留风险。');
+    if (/(补发|推送异常|下发异常|未收到)/.test(content) && !/(用户|人数|量级|覆盖|影响).*(\d|多少|X)/i.test(content)) {
+      addSuggestion(suggestions, '【落地结论】补发或推送异常可以补充影响用户量级，例如影响多少用户、补发覆盖范围、是否还有遗留风险。');
     }
 
     if (/(异常|风险|阻塞|下滑|失败|未收到)/.test(content) && !/(下一步|后续|已处理|解决方案|负责人|时间点|预计)/.test(content)) {
-      suggestions.push('涉及异常或风险时，建议补充处理状态、负责人、下一步和预计完成时间，降低老板追问成本。');
+      addSuggestion(suggestions, '【后续计划】涉及异常或风险时，建议补充处理状态、负责人、下一步和预计完成时间，降低老板追问成本。');
+    }
+
+    if (/(沟通|同步|对齐|周会|Review|review|整理|了解)/.test(work) && !hasOutcome(work)) {
+      addSuggestion(suggestions, '【落地结论】沟通 / 同步 / Review 类事项建议补充“最后明确了什么”，例如结论、决策、分工或待确认事项。');
+    }
+
+    if (/(数据|分析|复盘|未付费|留存|活跃|转化|付费)/.test(workAndPlan) && !/(结论|发现|判断|原因|分层|人群|漏斗|指标)/.test(workAndPlan)) {
+      addSuggestion(suggestions, '【落地结论】数据分析类事项建议补充分析结论，例如影响的是哪类用户、哪个行为环节，以及对留存 / 付费 / 转化的判断。');
+    }
+
+    if (/(profile|Profile|推荐|语伴|匹配|聊天)/.test(workAndPlan) && !/(留存|活跃|回复|聊天|匹配|转化|实验|指标)/.test(workAndPlan)) {
+      addSuggestion(suggestions, '【进一步思考】推荐 / 语伴 / Profile 相关内容可以补充对社交链路的判断：它会影响匹配效率、聊天转化、活跃还是留存。');
+    }
+
+    if (/(上线|测试|改版|新 UI|UI|策略)/.test(work) && !/(观察|指标|验证|灰度|回收|复盘|数据)/.test(content)) {
+      addSuggestion(suggestions, '【后续计划】上线、测试或策略调整后，建议补充观察计划：看哪些指标、观察多久、什么结果算符合预期。');
+    }
+
+    if (plan && /(Review|review|分析|整理|沟通|跟进|对齐)/.test(plan) && !/(输出|结论|方案|确认|完成|交付|上线|时间点)/.test(plan)) {
+      addSuggestion(suggestions, '【后续计划】明日计划里的 Review / 分析 / 整理类事项，可以补充预期产出，例如输出结论、方案、问题清单或上线判断。');
     }
 
     if (thoughts && !/(建议|需要|拍板|决策|风险|判断|原因|方案)/.test(thoughts)) {
-      suggestions.push('思考 / 问题部分可以补充你的判断或建议动作，让它更像向上管理信息，而不只是记录问题。');
-    }
-
-    if (!hasThoughts && hasRichWork && suggestions.length === 0) {
-      suggestions.push('今日工作内容较丰富，但暂未发现明显缺口；如有需要，可以补充一条最重要的业务判断或风险。');
+      addSuggestion(suggestions, '【进一步思考】思考 / 问题部分可以补充你的判断或建议动作，让它更像向上管理信息，而不只是记录问题。');
     }
 
     return suggestions;

@@ -354,7 +354,7 @@
   }
 
   function isModuleLine(line) {
-    const cleanLine = line.trim();
+    const cleanLine = line.trim().replace(/^【|】$/g, '');
     return cleanLine.length <= 20 && /(业务|项目|模块)$/.test(cleanLine);
   }
 

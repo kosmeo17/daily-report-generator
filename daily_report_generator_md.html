@@ -143,6 +143,32 @@
   .output-body .sub-list { list-style-type: lower-alpha; margin-top: 4px; }
   .output-body .third-list { list-style-type: lower-roman; margin-top: 4px; }
 
+  .output-part {
+    border: 1px solid #ece9e2;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .output-part:last-child { margin-bottom: 0; }
+  .output-part-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #faf9f7;
+    border-bottom: 1px solid #ece9e2;
+  }
+  .output-part-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+  }
+  .output-part-body {
+    padding: 14px 16px;
+  }
+
   .suggestion-section {
     background: #fff7ed;
     border: 1px solid #fed7aa;
@@ -272,7 +298,6 @@
   <div class="output-section" id="outputSection">
     <div class="output-topbar">
       <span id="outputFilename">日报.md</span>
-      <button class="copy-btn-inline" onclick="copyMd()">复制到飞书</button>
     </div>
     <div class="output-body" id="outputBody"></div>
   </div>
@@ -299,6 +324,11 @@
   document.getElementById('outputFilename').textContent = `日报_${y}${m}${d}.md`;
 
   let rawMd = '';
+  let rawSections = {
+    work: '',
+    plan: '',
+    thoughts: ''
+  };
 
   function splitLines(text) {
     return text
@@ -335,16 +365,37 @@
   function splitFreeformLine(line) {
     const trimmed = line.trim();
 
-    if (!trimmed || hasListMarker(line) || isModuleLine(trimmed) || trimmed.length < 45) {
+    if (!trimmed || isModuleLine(trimmed)) {
       return [line];
     }
 
-    return trimmed
+    const parts = trimmed
       .replace(/([。；;])\s*/g, '$1\n')
-      .replace(/，(?=(同时|另外|此外|后续|今天|明天|然后|并且|发现|输出|完成|跟进|沟通|同步|整理|Review|review))/g, '\n')
+      .replace(/，(?=(同时|另外|此外|后续|今天|明天|然后|并且|发现|输出|完成|跟进|沟通|同步|Review|review))/g, '\n')
       .split('\n')
       .map(item => item.trim().replace(/[。；;]$/, ''))
       .filter(Boolean);
+
+    if (hasListMarker(line)) {
+      const firstPart = parts[0] || trimmed;
+      const titleMatch = firstPart.match(/^(\d+[\.\、)]\s+)(.{2,30}?)(：|:(?!\/\/))\s*(.+)$/);
+
+      if (titleMatch && parts.length > 1) {
+        const [, marker, title, , firstDetail] = titleMatch;
+        const childLines = [firstDetail, ...parts.slice(1)]
+          .filter(Boolean)
+          .map((item, index) => `   ${index + 1}. ${item}`);
+        return [`${marker}${title}`, ...childLines];
+      }
+
+      return [line];
+    }
+
+    if (trimmed.length < 45) {
+      return [line];
+    }
+
+    return parts;
   }
 
   function expandFreeformLines(lines) {
@@ -362,16 +413,23 @@
 
   function capitalizeEnglishNames(text) {
     const protectedWords = new Set([
-      'AI', 'API', 'CEO', 'CPM', 'GEO', 'GMV', 'KOC', 'KPI', 'LTV', 'OKR',
+      'AI', 'API', 'ARPU', 'ATV', 'CEO', 'CPM', 'GEO', 'GMV', 'KOC', 'KPI', 'LTV', 'OKR',
       'SEO', 'SKU', 'TA', 'VIP'
     ]);
 
-    return text.replace(/\b[A-Za-z][A-Za-z'-]*\b/g, word => {
-      const upperWord = word.toUpperCase();
-      if (protectedWords.has(upperWord)) return upperWord;
-      if (word.length <= 2) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    });
+    function capitalizeSegment(segment) {
+      return segment.replace(/\b[A-Za-z][A-Za-z'-]*\b/g, word => {
+        const upperWord = word.toUpperCase();
+        if (protectedWords.has(upperWord)) return upperWord;
+        if (word.length <= 2) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      });
+    }
+
+    return text
+      .split(/(https?:\/\/\S+)/gi)
+      .map(segment => /^https?:\/\//i.test(segment) ? segment : capitalizeSegment(segment))
+      .join('');
   }
 
   function polishText(text) {
@@ -601,11 +659,17 @@
     if (!suggestions.includes(text)) suggestions.push(text);
   }
 
+  function isEmptyMeaning(text) {
+    return !text.trim() || /^(不知道|不确定|暂无|无|没有|没想好|待定)$/i.test(text.trim());
+  }
+
   function buildSuggestions(work, plan, thoughts) {
-    const content = `${work}\n${plan}\n${thoughts}`;
+    const validPlan = isEmptyMeaning(plan) ? '' : plan;
+    const validThoughts = isEmptyMeaning(thoughts) ? '' : thoughts;
+    const content = `${work}\n${validPlan}\n${validThoughts}`;
     const contentLines = splitLines(content);
     const suggestions = [];
-    const workAndPlan = `${work}\n${plan}`;
+    const workAndPlan = `${work}\n${validPlan}`;
 
     if (/(Paywall|paywall|支付率|调起支付|实际支付率)/.test(content) && !hasSpecificMetric(content, ['Paywall', 'paywall', '支付率', '调起支付', '实际支付率'])) {
       addSuggestion(suggestions, '【落地结论】Paywall / 支付率相关内容可以补充具体数字，例如“近 6 个月下降 X 个百分点”或“影响到哪个入口 / SKU”。');
@@ -647,11 +711,27 @@
       addSuggestion(suggestions, '【后续计划】上线、测试或策略调整后，建议补充观察计划：看哪些指标、观察多久、什么结果算符合预期。');
     }
 
-    if (plan && /(Review|review|分析|整理|沟通|跟进|对齐)/.test(plan) && !/(输出|结论|方案|确认|完成|交付|上线|时间点)/.test(plan)) {
+    if (validPlan && /(Review|review|分析|整理|沟通|跟进|对齐)/.test(validPlan) && !/(输出|结论|方案|确认|完成|交付|上线|时间点)/.test(validPlan)) {
       addSuggestion(suggestions, '【后续计划】明日计划里的 Review / 分析 / 整理类事项，可以补充预期产出，例如输出结论、方案、问题清单或上线判断。');
     }
 
-    if (thoughts && !/(建议|需要|拍板|决策|风险|判断|原因|方案)/.test(thoughts)) {
+    if (!validPlan && /Stripe|stripe|支付|付费率|支付转化|ARPU|续费率|取消订阅/.test(work)) {
+      addSuggestion(suggestions, '【后续计划】可以补充 Stripe 相关下一步：明日拜访要确认哪些问题、希望对方给哪些方案，以及后续用支付转化率 / 净利润 ARPU / 续费率验证效果。');
+    }
+
+    if (!validPlan && /历史未付费|未付费|取数口径|报告|数据/.test(work)) {
+      addSuggestion(suggestions, '【后续计划】历史未付费报告可以补充下一步：修正口径后重新输出结论，并明确会影响哪类用户分层或召回策略。');
+    }
+
+    if (!validPlan && /付费入口|入口规划|访客入口|入口优化/.test(work)) {
+      addSuggestion(suggestions, '【后续计划】入口规划 / 优化类事项可以补充下一步：明确方案评审时间、核心转化指标，以及是否需要实验验证。');
+    }
+
+    if (!validPlan && /周会|商业化组/.test(work)) {
+      addSuggestion(suggestions, '【后续计划】周会类事项如果有结论，可以补充后续分工或待推进事项，避免只记录“开会”。');
+    }
+
+    if (validThoughts && !/(建议|需要|拍板|决策|风险|判断|原因|方案)/.test(validThoughts)) {
       addSuggestion(suggestions, '【进一步思考】思考 / 问题部分可以补充你的判断或建议动作，让它更像向上管理信息，而不只是记录问题。');
     }
 
@@ -773,10 +853,40 @@
     return `## ${title}\n${items}`;
   }
 
+  function formatPlainList(text) {
+    const lines = expandFreeformLines(splitLines(text));
+    if (!lines.length) return '';
+
+    return lines
+      .map((line, index) => `${index + 1}. ${formatItem(line)}`)
+      .join('\n');
+  }
+
+  function renderOutputSections() {
+    const outputBody = document.getElementById('outputBody');
+    const sections = [
+      { key: 'work', title: '今日工作内容', markdown: rawSections.work },
+      { key: 'plan', title: '明日计划', markdown: rawSections.plan },
+      { key: 'thoughts', title: '思考 / 问题', markdown: rawSections.thoughts }
+    ].filter(section => section.markdown);
+
+    outputBody.innerHTML = sections.map(section => `
+      <div class="output-part">
+        <div class="output-part-topbar">
+          <span class="output-part-title">${section.title}</span>
+          <button class="copy-btn-inline" onclick="copySection('${section.key}')">复制到飞书</button>
+        </div>
+        <div class="output-part-body">${renderMarkdown(section.markdown)}</div>
+      </div>
+    `).join('');
+  }
+
   function generate() {
     const work = document.getElementById('input-work').value.trim();
-    const plan = document.getElementById('input-plan').value.trim();
-    const thoughts = document.getElementById('input-thoughts').value.trim();
+    const planInput = document.getElementById('input-plan').value.trim();
+    const thoughtsInput = document.getElementById('input-thoughts').value.trim();
+    const plan = isEmptyMeaning(planInput) ? '' : planInput;
+    const thoughts = isEmptyMeaning(thoughtsInput) ? '' : thoughtsInput;
 
     if (!work && !plan) { alert('请至少填写今日工作内容或明日计划'); return; }
 
@@ -795,18 +905,25 @@
     outputBody.textContent = '';
 
     try {
+      rawSections = {
+        work: formatWork(work),
+        plan: formatPlainList(plan),
+        thoughts: formatPlainList(thoughts)
+      };
+
       rawMd = [
-        formatWork(work),
-        formatList('明日计划', plan),
-        formatList('思考 / 问题', thoughts)
+        rawSections.work,
+        rawSections.plan,
+        rawSections.thoughts
       ].filter(Boolean).join('\n\n');
 
-      outputBody.innerHTML = renderMarkdown(rawMd);
-      renderSuggestions(buildSuggestions(work, plan, thoughts));
+      renderOutputSections();
+      renderSuggestions(buildSuggestions(work, planInput, thoughtsInput));
       outputSection.classList.add('visible');
       outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch(e) {
       rawMd = '';
+      rawSections = { work: '', plan: '', thoughts: '' };
       outputBody.textContent = `⚠️ ${e.message || '生成失败，请重试'}`;
       outputSection.classList.add('visible');
       outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -819,9 +936,18 @@
 
   function copyMd() {
     if (!rawMd) return;
+    copyMarkdown(rawMd);
+  }
 
-    const html = renderMarkdown(rawMd);
-    const plainText = rawMd;
+  function copySection(sectionKey) {
+    const markdown = rawSections[sectionKey];
+    if (!markdown) return;
+    copyMarkdown(markdown);
+  }
+
+  function copyMarkdown(markdown) {
+    const html = renderMarkdown(markdown);
+    const plainText = markdown;
     const copyPromise = window.ClipboardItem && navigator.clipboard.write
       ? navigator.clipboard.write([
           new window.ClipboardItem({
